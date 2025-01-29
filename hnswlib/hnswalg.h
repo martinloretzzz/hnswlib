@@ -54,6 +54,7 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
     size_t data_size_{0};
 
     DISTFUNC<dist_t> fstdistfunc_;
+    BATCHEDDISTFUNC<dist_t>fstdistfuncbatched_;
     void *dist_func_param_{nullptr};
 
     mutable std::mutex label_lookup_lock;  // lock for label_lookup_
@@ -101,6 +102,7 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
         num_deleted_ = 0;
         data_size_ = s->get_data_size();
         fstdistfunc_ = s->get_dist_func();
+        fstdistfuncbatched_ = s->get_dist_func_batched();
         dist_func_param_ = s->get_dist_func_param();
         if ( M <= 10000 ) {
             M_ = M;
@@ -374,6 +376,26 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
             _mm_prefetch((char *) (data + 2), _MM_HINT_T0);
 #endif
 
+            std::vector<void *> batch;
+
+            for (size_t j = 1; j <= size; j++) {
+                int candidate_id = *(data + j);
+                if (!(visited_array[candidate_id] == visited_array_tag)) {
+                    char *currObj1 = (getDataByInternalId(candidate_id));
+                    batch.push_back(currObj1);
+                }
+            }
+
+            // printf("%d %d\n", size, batch.size());
+
+            size_t batchSize = batch.size();
+            std::vector<float> dists(batchSize);
+
+
+            fstdistfuncbatched_(data_point, &batch, dist_func_param_, &dists);
+            // printf("%d, %d \n", batch.size(), dists.size());
+
+            size_t dist_i = 0;
             for (size_t j = 1; j <= size; j++) {
                 int candidate_id = *(data + j);
 //                    if (candidate_id == 0) continue;
@@ -386,7 +408,9 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
                     visited_array[candidate_id] = visited_array_tag;
 
                     char *currObj1 = (getDataByInternalId(candidate_id));
-                    dist_t dist = fstdistfunc_(data_point, currObj1, dist_func_param_);
+                    // printf("%d, %d\n", dists.size(), dist_i);
+                    dist_t dist = dists.at(dist_i);
+                    dist_i += 1;
 
                     bool flag_consider_candidate;
                     if (!bare_bone_search && stop_condition) {
@@ -747,6 +771,7 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
 
         data_size_ = s->get_data_size();
         fstdistfunc_ = s->get_dist_func();
+        fstdistfuncbatched_ = s->get_dist_func_batched();
         dist_func_param_ = s->get_dist_func_param();
 
         auto pos = input.tellg();

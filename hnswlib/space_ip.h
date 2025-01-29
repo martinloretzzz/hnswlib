@@ -1,5 +1,6 @@
 #pragma once
 #include "hnswlib.h"
+#include <vector>
 
 namespace hnswlib {
 
@@ -11,6 +12,27 @@ InnerProduct(const void *pVect1, const void *pVect2, const void *qty_ptr) {
         res += ((float *) pVect1)[i] * ((float *) pVect2)[i];
     }
     return res;
+}
+
+static void
+BatchedInnerProduct(const void *pVect1, std::vector<void *> *batch_ptr, const void *qty_ptr, std::vector<float> *res_ptr) {
+    size_t dim = *((size_t *) qty_ptr);
+    // std::vector<char *> batch = * (std::vector<char *> *) batch_ptr;
+    // std::vector<float> res = * (std::vector<float> *) res_ptr;
+    size_t batch_size = res_ptr->size();
+
+    for (unsigned i = 0; i < dim; i++) { 
+        float val1 = ((float *) pVect1)[i];
+        for (unsigned b = 0; b < batch_size; b++) {
+            void * vec2 = batch_ptr->at(b);
+            float val2 = ((float *) vec2)[i];
+            res_ptr->at(b) += val1 * val2;
+        }
+    }
+
+    for (unsigned b = 0; b < batch_size; b++) {
+        res_ptr->at(b) = 1.0f - res_ptr->at(b);
+    }
 }
 
 static float
@@ -341,11 +363,13 @@ InnerProductDistanceSIMD4ExtResiduals(const void *pVect1v, const void *pVect2v, 
 
 class InnerProductSpace : public SpaceInterface<float> {
     DISTFUNC<float> fstdistfunc_;
+    BATCHEDDISTFUNC<float> fstdistfuncbatched_;
     size_t data_size_;
     size_t dim_;
 
  public:
     InnerProductSpace(size_t dim) {
+        fstdistfuncbatched_ = BatchedInnerProduct;
         fstdistfunc_ = InnerProductDistance;
 #if defined(USE_AVX) || defined(USE_SSE) || defined(USE_AVX512)
     #if defined(USE_AVX512)
@@ -388,6 +412,10 @@ class InnerProductSpace : public SpaceInterface<float> {
 
     DISTFUNC<float> get_dist_func() {
         return fstdistfunc_;
+    }
+
+    BATCHEDDISTFUNC<float> get_dist_func_batched() {
+        return fstdistfuncbatched_;
     }
 
     void *get_dist_func_param() {

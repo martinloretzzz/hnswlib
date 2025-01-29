@@ -58,6 +58,10 @@ class MultiVectorL2Space : public BaseMultiVectorSpace<DOCIDTYPE> {
         return fstdistfunc_;
     }
 
+    BATCHEDDISTFUNC<int> get_dist_func_batched() {
+        return NULL;
+    }
+
     void *get_dist_func_param() override {
         return &dim_;
     }

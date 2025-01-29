@@ -1,12 +1,13 @@
 #include "../../hnswlib/hnswlib.h"
-
+#include <chrono>
 
 int main() {
-    int dim = 16;               // Dimension of the elements
-    int max_elements = 10000;   // Maximum number of elements, should be known beforehand
-    int M = 16;                 // Tightly connected with internal dimensionality of the data
+    int dim = 1024;               // Dimension of the elements
+    int max_elements = 1000;   // Maximum number of elements, should be known beforehand
+    int M = 32;                 // Tightly connected with internal dimensionality of the data
                                 // strongly affects the memory consumption
     int ef_construction = 200;  // Controls index search speed/build speed tradeoff
+    int time_elements = 20000;
 
     // Initing index
     hnswlib::L2Space space(dim);
@@ -43,6 +44,7 @@ int main() {
 
     // Deserialize index and check recall
     alg_hnsw = new hnswlib::HierarchicalNSW<float>(&space, hnsw_path);
+
     correct = 0;
     for (int i = 0; i < max_elements; i++) {
         std::priority_queue<std::pair<float, hnswlib::labeltype>> result = alg_hnsw->searchKnn(data + i * dim, 1);
@@ -51,6 +53,21 @@ int main() {
     }
     recall = (float)correct / max_elements;
     std::cout << "Recall of deserialized index: " << recall << "\n";
+
+    using picoseconds = std::chrono::duration<long long, std::pico>;
+    auto t0 = std::chrono::steady_clock::now();
+
+    correct = 0;
+    for (int i = 0; i < time_elements; i++) {
+        std::priority_queue<std::pair<float, hnswlib::labeltype>> result = alg_hnsw->searchKnn(data + i * dim, 1);
+        hnswlib::labeltype label = result.top().second;
+        if (label == i) correct++;
+    }
+    recall = (float)correct / max_elements;
+
+    auto t1 = std::chrono::steady_clock::now();
+    auto d = picoseconds{t1 - t0};
+    std::cout << d.count() / 1000000000 << "ms\n";
 
     delete[] data;
     delete alg_hnsw;

@@ -19,6 +19,29 @@ L2Sqr(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
     return (res);
 }
 
+static void
+BatchedL2Sqr(const void *pVect1, std::vector<void *> *batch_ptr, const void *qty_ptr, std::vector<float> *res_ptr) {
+    size_t dim = *((size_t *) qty_ptr);
+    // std::vector<char *> batch = * (std::vector<char *> *) batch_ptr;
+    // std::vector<float> res = * (std::vector<float> *) res_ptr;
+    size_t batch_size = res_ptr->size();
+
+    for (unsigned b = 0; b < batch_size; b++) {
+        res_ptr->at(b) = 0.0f;
+    }
+
+    for (unsigned i = 0; i < dim; i++) { 
+        float val1 = ((float *) pVect1)[i];
+        for (unsigned b = 0; b < batch_size; b++) {
+            void * vec2 = batch_ptr->at(b);
+            float val2 = ((float *) vec2)[i];
+            float t = val1 - val2;
+            res_ptr->at(b) += t * t;
+        }
+    }
+}
+
+
 #if defined(USE_AVX512)
 
 // Favor using AVX512 if available.
@@ -245,6 +268,10 @@ class L2Space : public SpaceInterface<float> {
         return fstdistfunc_;
     }
 
+    BATCHEDDISTFUNC<float> get_dist_func_batched() {
+        return BatchedL2Sqr;
+    }
+
     void *get_dist_func_param() {
         return &dim_;
     }
@@ -313,6 +340,10 @@ class L2SpaceI : public SpaceInterface<int> {
 
     DISTFUNC<int> get_dist_func() {
         return fstdistfunc_;
+    }
+
+    BATCHEDDISTFUNC<int> get_dist_func_batched() {
+        return NULL;
     }
 
     void *get_dist_func_param() {
