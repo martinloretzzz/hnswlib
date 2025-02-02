@@ -8,6 +8,7 @@
   #define HNSWERR HNSWLIB_ERR_OVERRIDE
 #endif
 
+
 #ifndef NO_MANUAL_VECTORIZATION
 #if (defined(__SSE__) || _M_IX86_FP > 0 || defined(_M_AMD64) || defined(_M_X64))
 #define USE_SSE
@@ -19,6 +20,7 @@
 #endif
 #endif
 #endif
+
 
 #if defined(USE_AVX) || defined(USE_SSE)
 #ifdef _MSC_VER
@@ -170,8 +172,8 @@ static void readBinaryPOD(std::istream &in, T &podRef) {
 template<typename MTYPE>
 using DISTFUNC = MTYPE(*)(const void *, const void *, const void *);
 
-template<typename MTYPE>
-using BATCHEDDISTFUNC = void(*)(const void *, std::vector<void *> *, const void *, std::vector<float> *);
+template <typename MTYPE>
+using BATCHEDDISTFUNC = std::vector<float> (*)(size_t, const void *, void **, void *);
 
 template<typename MTYPE>
 class SpaceInterface {

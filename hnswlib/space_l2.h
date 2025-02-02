@@ -269,7 +269,7 @@ class L2Space : public SpaceInterface<float> {
     }
 
     BATCHEDDISTFUNC<float> get_dist_func_batched() {
-        return BatchedL2Sqr;
+        return NULL;
     }
 
     void *get_dist_func_param() {

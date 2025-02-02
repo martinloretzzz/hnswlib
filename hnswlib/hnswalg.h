@@ -323,6 +323,9 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
         std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates;
         std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> candidate_set;
 
+        // using picoseconds = std::chrono::duration<long long, std::pico>;
+        // auto t0 = std::chrono::steady_clock::now();
+
         dist_t lowerBound;
         if (bare_bone_search || 
             (!isMarkedDeleted(ep_id) && ((!isIdAllowed) || (*isIdAllowed)(getExternalLabel(ep_id))))) {
@@ -377,6 +380,7 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
 #endif
 
             std::vector<void *> batch;
+            batch.reserve(size);
 
             for (size_t j = 1; j <= size; j++) {
                 int candidate_id = *(data + j);
@@ -386,14 +390,8 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
                 }
             }
 
-            // printf("%d %d\n", size, batch.size());
-
             size_t batchSize = batch.size();
-            std::vector<float> dists(batchSize);
-
-
-            fstdistfuncbatched_(data_point, &batch, dist_func_param_, &dists);
-            // printf("%d, %d \n", batch.size(), dists.size());
+            std::vector<float> dists = fstdistfuncbatched_(batch.size(), data_point, batch.data(), dist_func_param_);
 
             size_t dist_i = 0;
             for (size_t j = 1; j <= size; j++) {
@@ -458,8 +456,14 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
                 }
             }
         }
+        
 
         visited_list_pool_->releaseVisitedList(vl);
+        
+        // auto t1 = std::chrono::steady_clock::now();
+        // auto d = picoseconds{t1 - t0};
+        // std::cout << "Base Layer " << d.count() / 1000 << "ns\n";
+
         return top_candidates;
     }
 
@@ -1297,6 +1301,9 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
         std::priority_queue<std::pair<dist_t, labeltype >> result;
         if (cur_element_count == 0) return result;
 
+        // using picoseconds = std::chrono::duration<long long, std::pico>;
+        // auto t0 = std::chrono::steady_clock::now();
+
         tableint currObj = enterpoint_node_;
         dist_t curdist = fstdistfunc_(query_data, getDataByInternalId(enterpoint_node_), dist_func_param_);
 
@@ -1312,12 +1319,22 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
                 metric_distance_computations+=size;
 
                 tableint *datal = (tableint *) (data + 1);
+
+                void** batch = new void*[size];
                 for (int i = 0; i < size; i++) {
                     tableint cand = datal[i];
                     if (cand < 0 || cand > max_elements_)
                         throw std::runtime_error("cand error");
-                    dist_t d = fstdistfunc_(query_data, getDataByInternalId(cand), dist_func_param_);
+                    batch[i] = getDataByInternalId(cand);
+                }
 
+                std::vector<float> dists = fstdistfuncbatched_(size, query_data, batch, dist_func_param_);
+
+                delete[] batch;
+
+                for (int i = 0; i < size; i++) {
+                    tableint cand = datal[i];
+                    float d = dists[i];
                     if (d < curdist) {
                         curdist = d;
                         currObj = cand;
@@ -1326,6 +1343,11 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
                 }
             }
         }
+
+        // auto t1 = std::chrono::steady_clock::now();
+        // auto d = picoseconds{t1 - t0};
+        // std::cout << "Graph " << d.count() / 1000 << "ns\n";
+            
 
         std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates;
         bool bare_bone_search = !num_deleted_ && !isIdAllowed;

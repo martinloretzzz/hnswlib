@@ -7,10 +7,10 @@ int main() {
     int M = 32;                 // Tightly connected with internal dimensionality of the data
                                 // strongly affects the memory consumption
     int ef_construction = 200;  // Controls index search speed/build speed tradeoff
-    int time_elements = 20000;
+    int time_elements = 10000;
 
     // Initing index
-    hnswlib::L2Space space(dim);
+    hnswlib::InnerProductSpace space(dim);
     hnswlib::HierarchicalNSW<float>* alg_hnsw = new hnswlib::HierarchicalNSW<float>(&space, max_elements, M, ef_construction);
 
     // Generate random data
@@ -22,29 +22,35 @@ int main() {
         data[i] = distrib_real(rng);
     }
 
+    float correct = 0;
+    float recall = 0;
+    std::string hnsw_path = "hnsw.bin";
+
+    /*
     // Add data to index
     for (int i = 0; i < max_elements; i++) {
         alg_hnsw->addPoint(data + i * dim, i);
     }
 
     // Query the elements for themselves and measure recall
-    float correct = 0;
+    correct = 0;
     for (int i = 0; i < max_elements; i++) {
         std::priority_queue<std::pair<float, hnswlib::labeltype>> result = alg_hnsw->searchKnn(data + i * dim, 1);
         hnswlib::labeltype label = result.top().second;
         if (label == i) correct++;
     }
-    float recall = correct / max_elements;
+    recall = correct / max_elements;
     std::cout << "Recall: " << recall << "\n";
 
     // Serialize index
-    std::string hnsw_path = "hnsw.bin";
     alg_hnsw->saveIndex(hnsw_path);
     delete alg_hnsw;
+    */
 
     // Deserialize index and check recall
     alg_hnsw = new hnswlib::HierarchicalNSW<float>(&space, hnsw_path);
 
+    /*
     correct = 0;
     for (int i = 0; i < max_elements; i++) {
         std::priority_queue<std::pair<float, hnswlib::labeltype>> result = alg_hnsw->searchKnn(data + i * dim, 1);
@@ -53,13 +59,15 @@ int main() {
     }
     recall = (float)correct / max_elements;
     std::cout << "Recall of deserialized index: " << recall << "\n";
+    */
 
     using picoseconds = std::chrono::duration<long long, std::pico>;
     auto t0 = std::chrono::steady_clock::now();
 
     correct = 0;
     for (int i = 0; i < time_elements; i++) {
-        std::priority_queue<std::pair<float, hnswlib::labeltype>> result = alg_hnsw->searchKnn(data + i * dim, 1);
+        int element = i % max_elements;
+        std::priority_queue<std::pair<float, hnswlib::labeltype>> result = alg_hnsw->searchKnn(data + element * dim, 1);
         hnswlib::labeltype label = result.top().second;
         if (label == i) correct++;
     }
