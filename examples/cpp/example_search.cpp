@@ -75,6 +75,8 @@ int main() {
 
     auto t1 = std::chrono::steady_clock::now();
     auto d = picoseconds{t1 - t0};
+
+    std::cout << "Recall: " << recall << "\n";
     std::cout << d.count() / 1000000000 << "ms\n";
 
     delete[] data;

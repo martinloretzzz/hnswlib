@@ -76,10 +76,15 @@ static std::vector<float> BatchedInnerProductForSize(size_t batch_size, const vo
     if (batch_size <= 64)
         return BatchedInnerProductForFixedSize(batch_size, pVect1, batch_ptr, qty_ptr);
 
+    printf("Batch bigger than 64!");
+
+    return {};
+
     std::vector<float> result;
     size_t processed = 0;
     
     while (processed < batch_size) {
+        // TODO is the right batch pointer provided?
         size_t curBatch = std::min(batch_size - processed, size_t(64));
         auto partial = BatchedInnerProductForFixedSize(curBatch, pVect1, batch_ptr, qty_ptr);
         result.insert(result.end(), partial.begin(), partial.end());
@@ -103,6 +108,75 @@ static float
 InnerProductDistance(const void *pVect1, const void *pVect2, const void *qty_ptr) {
     return 1.0f - InnerProduct(pVect1, pVect2, qty_ptr);
 }
+
+static std::array<float, 4>
+BatchedInnerProductSIMD4(const void *pVec0, void **pBatch, void *qty_ptr) {
+    float *pv0 = (float *) pVec0;
+
+    const float** batch = ((const float**)pBatch);
+    const float* pv1 = (const float*) batch[0];
+    const float* pv2 = (const float*) batch[1];
+    const float* pv3 = (const float*) batch[2];
+    const float* pv4 = (const float*) batch[3];
+
+    size_t qty = *((size_t *) qty_ptr);
+    size_t qty4 = qty / 4;
+    const float *pEnd0 = pv0 + 4 * qty4;
+
+    __m128 v0, vx;
+
+    __m128 s1 = _mm_setzero_ps();
+    __m128 s2 = _mm_setzero_ps();
+    __m128 s3 = _mm_setzero_ps();
+    __m128 s4 = _mm_setzero_ps();
+
+    for (; pv0 < pEnd0; pv0 += 4, pv1 += 4, pv2 += 4, pv3 += 4, pv4 += 4) {
+        __m128 v0 = _mm_loadu_ps(pv0);
+        s1 = _mm_add_ps(s1, _mm_mul_ps(v0, _mm_loadu_ps(pv1)));
+        s2 = _mm_add_ps(s2, _mm_mul_ps(v0, _mm_loadu_ps(pv2)));
+        s3 = _mm_add_ps(s3, _mm_mul_ps(v0, _mm_loadu_ps(pv3)));
+        s4 = _mm_add_ps(s4, _mm_mul_ps(v0, _mm_loadu_ps(pv4)));
+    }
+
+    float PORTABLE_ALIGN32 tmp[8];
+    std::array<float, 4> res{};
+
+    _mm_store_ps(tmp, s1);
+    res[0] = 1.0f - (tmp[0] + tmp[1] + tmp[2] + tmp[3]);
+    _mm_store_ps(tmp, s2);
+    res[1] = 1.0f - (tmp[0] + tmp[1] + tmp[2] + tmp[3]);
+    _mm_store_ps(tmp, s3);
+    res[2] = 1.0f - (tmp[0] + tmp[1] + tmp[2] + tmp[3]);
+    _mm_store_ps(tmp, s4);
+    res[3] = 1.0f - (tmp[0] + tmp[1] + tmp[2] + tmp[3]);
+
+    return res;
+}
+
+
+static std::vector<float> BatchedInnerProductSIMD(size_t batch_size, const void *pVect1, void **pBatch, void *qty_ptr)
+{
+    const float** batch = ((const float**)pBatch);
+    std::vector<float> result;
+    size_t processed = 0;
+    result.reserve(batch_size);
+    
+    while (processed < batch_size) {
+        void **batch_ptr = (void**) (batch + processed);
+        size_t currentBatch = (batch_size - processed >= 4) ? 4 : (batch_size - processed);
+        if (currentBatch == 4) {
+            auto simdRes = BatchedInnerProductSIMD4(pVect1, batch_ptr, qty_ptr);
+            result.insert(result.end(), simdRes.begin(), simdRes.end());
+        } else {
+            auto partial = BatchedInnerProductForFixedSize(currentBatch, pVect1, batch_ptr, qty_ptr);
+            result.insert(result.end(), partial.begin(), partial.end());
+        }
+        processed += currentBatch;
+    }
+    
+    return result;
+}
+
 
 #if defined(USE_AVX)
 
@@ -525,7 +599,11 @@ class InnerProductSpace : public SpaceInterface<float> {
     }
 
     BATCHEDDISTFUNC<float> get_dist_func_batched() {
-        return BatchedInnerProductForSize;
+        BATCHEDDISTFUNC<float> distfunc = BatchedInnerProductForSize;
+#if defined(USE_SSE)
+        distfunc = BatchedInnerProductSIMD;
+#endif
+        return distfunc;
     }
 
     void *get_dist_func_param() {
