@@ -109,6 +109,115 @@ InnerProductDistance(const void *pVect1, const void *pVect2, const void *qty_ptr
     return 1.0f - InnerProduct(pVect1, pVect2, qty_ptr);
 }
 
+static std::array<float, 2> BatchedInnerProductBatch2(const float* vec1, const float**batch, size_t dim)
+{
+    std::array<float, 2> res{};
+    for (size_t i = 0; i < dim; i++) {
+        float val1 = vec1[i];
+        res[0] += val1 * batch[0][i];
+        res[1] += val1 * batch[1][i];
+    }
+    return res;
+}
+
+static std::array<float, 4> BatchedInnerProductBatch4(const float* vec1, const float**batch, size_t dim)
+{
+    std::array<float, 4> res{};
+    for (size_t i = 0; i < dim; i++) {
+        float val1 = vec1[i];
+        res[0] += val1 * batch[0][i];
+        res[1] += val1 * batch[1][i];
+        res[2] += val1 * batch[2][i];
+        res[3] += val1 * batch[3][i];
+    }
+    return res;
+}
+
+static std::array<float, 8> BatchedInnerProductBatch8(const float* vec1, const float**batch, size_t dim)
+{
+    std::array<float, 8> res{};
+    for (size_t i = 0; i < dim; i++) {
+        float val1 = vec1[i];
+        res[0] += val1 * batch[0][i];
+        res[1] += val1 * batch[1][i];
+        res[2] += val1 * batch[2][i];
+        res[3] += val1 * batch[3][i];
+        res[4] += val1 * batch[4][i];
+        res[5] += val1 * batch[5][i];
+        res[6] += val1 * batch[6][i];
+        res[7] += val1 * batch[7][i];
+    }
+    return res;
+}
+
+static std::array<float, 16> BatchedInnerProductBatch16(const float* vec1, const float**batch, size_t dim)
+{
+    std::array<float, 16> res{};
+    for (size_t i = 0; i < dim; i++) {
+        float val1 = vec1[i];
+        res[0] += val1 * batch[0][i];
+        res[1] += val1 * batch[1][i];
+        res[2] += val1 * batch[2][i];
+        res[3] += val1 * batch[3][i];
+        res[4] += val1 * batch[4][i];
+        res[5] += val1 * batch[5][i];
+        res[6] += val1 * batch[6][i];
+        res[7] += val1 * batch[7][i];
+        res[8] += val1 * batch[8][i];
+        res[9] += val1 * batch[9][i];
+        res[10] += val1 * batch[10][i];
+        res[11] += val1 * batch[11][i];
+        res[12] += val1 * batch[12][i];
+        res[13] += val1 * batch[13][i];
+        res[14] += val1 * batch[14][i];
+        res[15] += val1 * batch[15][i];
+    }
+    return res;
+}
+
+static std::vector<float> BatchedInnerProductNoTemplate(size_t batch_size, const void *pVect1, void **pBatch, void *qty_ptr)
+{
+    size_t dim = *static_cast<size_t*>(qty_ptr);
+    const float** batch = ((const float**) pBatch);
+    const float* vec1 = static_cast<const float*>(pVect1);
+
+    size_t processed = 0;
+    std::vector<float> result;
+    result.reserve(batch_size);
+
+    while (processed < batch_size) {
+        if (batch_size - processed >= 16) {
+            auto batchResult = BatchedInnerProductBatch16(vec1, batch + processed, dim);
+            result.insert(result.end(), batchResult.begin(), batchResult.end());
+            processed += 16;
+        } else if (batch_size - processed >= 8) {
+            auto batchResult = BatchedInnerProductBatch8(vec1, batch + processed, dim);
+            result.insert(result.end(), batchResult.begin(), batchResult.end());
+            processed += 8;
+        } else if (batch_size - processed >= 4) {
+            auto batchResult = BatchedInnerProductBatch4(vec1, batch + processed, dim);
+            result.insert(result.end(), batchResult.begin(), batchResult.end());
+            processed += 4;
+        } else if (batch_size - processed >= 2) {
+            auto batchResult = BatchedInnerProductBatch2(vec1, batch + processed, dim);
+            result.insert(result.end(), batchResult.begin(), batchResult.end());
+            processed += 2;
+        } else {
+            float dist = InnerProduct(pVect1, batch[processed], qty_ptr);
+            result.push_back(dist);
+            processed += 1;
+        }
+    }
+    
+    for (unsigned b = 0; b < batch_size; b++) {
+        result[b] = 1.0f - result[b];
+    }
+
+    return result;
+}
+
+#if defined(USE_SSE)
+
 static std::array<float, 4>
 BatchedInnerProductSIMD4(const void *pVec0, void **pBatch, void *qty_ptr) {
     float *pv0 = (float *) pVec0;
@@ -176,6 +285,8 @@ static std::vector<float> BatchedInnerProductSIMD(size_t batch_size, const void 
     
     return result;
 }
+
+#endif
 
 
 #if defined(USE_AVX)
@@ -599,7 +710,7 @@ class InnerProductSpace : public SpaceInterface<float> {
     }
 
     BATCHEDDISTFUNC<float> get_dist_func_batched() {
-        BATCHEDDISTFUNC<float> distfunc = BatchedInnerProductForSize;
+        BATCHEDDISTFUNC<float> distfunc = BatchedInnerProductNoTemplate;
 #if defined(USE_SSE)
         distfunc = BatchedInnerProductSIMD;
 #endif
