@@ -54,7 +54,7 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
     size_t data_size_{0};
 
     DISTFUNC<dist_t> fstdistfunc_;
-    BATCHEDDISTFUNC<dist_t>fstdistfuncbatched_;
+    BATCHEDDISTFUNC<dist_t> fstdistfuncbatched_;
     void *dist_func_param_{nullptr};
 
     mutable std::mutex label_lookup_lock;  // lock for label_lookup_
@@ -272,6 +272,19 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
             _mm_prefetch(getDataByInternalId(*(datal + 1)), _MM_HINT_T0);
 #endif
 
+
+            std::vector<void *> batch;
+            batch.reserve(size);
+            for (size_t j = 0; j < size; j++) {
+                tableint candidate_id = *(datal + j);
+                if (visited_array[candidate_id] == visited_array_tag) continue;
+                char *currObj1 = (getDataByInternalId(candidate_id));
+                batch.push_back(currObj1);
+            }
+
+            std::vector<float> dists = fstdistfuncbatched_(batch.size(), data_point, batch.data(), dist_func_param_);
+
+            size_t dist_i = 0;
             for (size_t j = 0; j < size; j++) {
                 tableint candidate_id = *(datal + j);
 //                    if (candidate_id == 0) continue;
@@ -283,7 +296,8 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
                 visited_array[candidate_id] = visited_array_tag;
                 char *currObj1 = (getDataByInternalId(candidate_id));
 
-                dist_t dist1 = fstdistfunc_(data_point, currObj1, dist_func_param_);
+                dist_t dist1 = dists[dist_i];
+                dist_i += 1;
                 if (top_candidates.size() < ef_construction_ || lowerBound > dist1) {
                     candidateSet.emplace(-dist1, candidate_id);
 #ifdef USE_SSE
@@ -406,8 +420,7 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
                     visited_array[candidate_id] = visited_array_tag;
 
                     char *currObj1 = (getDataByInternalId(candidate_id));
-                    // printf("%d, %d\n", dists.size(), dist_i);
-                    dist_t dist = dists.at(dist_i);
+                    dist_t dist = dists[dist_i];
                     dist_i += 1;
 
                     bool flag_consider_candidate;
@@ -490,12 +503,16 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
             queue_closest.pop();
             bool good = true;
 
+            std::vector<void *> batch;
+            batch.reserve(return_list.size());
             for (std::pair<dist_t, tableint> second_pair : return_list) {
-                dist_t curdist =
-                        fstdistfunc_(getDataByInternalId(second_pair.second),
-                                        getDataByInternalId(curent_pair.second),
-                                        dist_func_param_);
-                if (curdist < dist_to_query) {
+                batch.push_back(getDataByInternalId(second_pair.second));
+            }
+
+            std::vector<float> dists = fstdistfuncbatched_(batch.size(), getDataByInternalId(curent_pair.second), batch.data(), dist_func_param_);
+
+            for (float dist : dists) {
+                if (dist < dist_to_query) {
                     good = false;
                     break;
                 }
@@ -622,10 +639,15 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
                     std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> candidates;
                     candidates.emplace(d_max, cur_c);
 
+                    std::vector<void *> batch(sz_link_list_other);
                     for (size_t j = 0; j < sz_link_list_other; j++) {
-                        candidates.emplace(
-                                fstdistfunc_(getDataByInternalId(data[j]), getDataByInternalId(selectedNeighbors[idx]),
-                                                dist_func_param_), data[j]);
+                        batch[j] = getDataByInternalId(data[j]);
+                    }
+
+                    std::vector<float> dists = fstdistfuncbatched_(batch.size(), getDataByInternalId(selectedNeighbors[idx]), batch.data(), dist_func_param_);
+
+                    for (size_t j = 0; j < sz_link_list_other; j++) {
+                        candidates.emplace(dists[j], data[j]);
                     }
 
                     getNeighborsByHeuristic2(candidates, Mcurmax);
@@ -1063,11 +1085,21 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
                 std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> candidates;
                 size_t size = sCand.find(neigh) == sCand.end() ? sCand.size() : sCand.size() - 1;  // sCand guaranteed to have size >= 1
                 size_t elementsToKeep = std::min(ef_construction_, size);
-                for (auto&& cand : sCand) {
-                    if (cand == neigh)
-                        continue;
 
-                    dist_t distance = fstdistfunc_(getDataByInternalId(neigh), getDataByInternalId(cand), dist_func_param_);
+                std::vector<void *> batch;
+                batch.reserve(sCand.size());
+                for (auto&& cand : sCand) {
+                    if (cand == neigh) continue;
+                    batch.push_back(getDataByInternalId(cand));
+                }
+
+                std::vector<float> dists = fstdistfuncbatched_(batch.size(), getDataByInternalId(neigh), batch.data(), dist_func_param_);
+
+                size_t dist_i = 0;
+                for (auto&& cand : sCand) {
+                    if (cand == neigh) continue;
+                    dist_t distance = dists[dist_i];
+                    dist_i += 1;
                     if (candidates.size() < elementsToKeep) {
                         candidates.emplace(distance, cand);
                     } else {
@@ -1118,15 +1150,17 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
                     data = get_linklist_at_level(currObj, level);
                     int size = getListCount(data);
                     tableint *datal = (tableint *) (data + 1);
-#ifdef USE_SSE
-                    _mm_prefetch(getDataByInternalId(*datal), _MM_HINT_T0);
-#endif
+                    
+                    std::vector<void *> batch(size);
                     for (int i = 0; i < size; i++) {
-#ifdef USE_SSE
-                        _mm_prefetch(getDataByInternalId(*(datal + i + 1)), _MM_HINT_T0);
-#endif
+                        batch[i] = getDataByInternalId(datal[i]);
+                    }
+
+                    std::vector<float> dists = fstdistfuncbatched_(batch.size(), dataPoint, batch.data(), dist_func_param_);
+
+                    for (int i = 0; i < size; i++) {
                         tableint cand = datal[i];
-                        dist_t d = fstdistfunc_(dataPoint, getDataByInternalId(cand), dist_func_param_);
+                        dist_t d = dists[i];
                         if (d < curdist) {
                             curdist = d;
                             currObj = cand;
@@ -1252,11 +1286,19 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
                         int size = getListCount(data);
 
                         tableint *datal = (tableint *) (data + 1);
+
+                        std::vector<void *> batch(size);
+                        for (int i = 0; i < size; i++) {
+                            batch[i] = getDataByInternalId(datal[i]);
+                        }
+
+                        std::vector<float> dists = fstdistfuncbatched_(batch.size(), data_point, batch.data(), dist_func_param_);
+
                         for (int i = 0; i < size; i++) {
                             tableint cand = datal[i];
                             if (cand < 0 || cand > max_elements_)
                                 throw std::runtime_error("cand error");
-                            dist_t d = fstdistfunc_(data_point, getDataByInternalId(cand), dist_func_param_);
+                            dist_t d = dists[i];
                             if (d < curdist) {
                                 curdist = d;
                                 currObj = cand;

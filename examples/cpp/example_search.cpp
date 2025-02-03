@@ -3,7 +3,7 @@
 
 int main() {
     int dim = 1024;               // Dimension of the elements
-    int max_elements = 1000;   // Maximum number of elements, should be known beforehand
+    int max_elements = 10000;   // Maximum number of elements, should be known beforehand
     int M = 32;                 // Tightly connected with internal dimensionality of the data
                                 // strongly affects the memory consumption
     int ef_construction = 200;  // Controls index search speed/build speed tradeoff
@@ -26,11 +26,19 @@ int main() {
     float recall = 0;
     std::string hnsw_path = "hnsw.bin";
 
-    /*
+    using picoseconds = std::chrono::duration<long long, std::pico>;
+    auto ti0 = std::chrono::steady_clock::now();
+
     // Add data to index
     for (int i = 0; i < max_elements; i++) {
         alg_hnsw->addPoint(data + i * dim, i);
     }
+
+    auto ti1 = std::chrono::steady_clock::now();
+    auto di = picoseconds{ti1 - ti0};
+
+    std::cout << "Index build time " << di.count() / 1000000000 << "ms\n";
+
 
     // Query the elements for themselves and measure recall
     correct = 0;
@@ -45,7 +53,6 @@ int main() {
     // Serialize index
     alg_hnsw->saveIndex(hnsw_path);
     delete alg_hnsw;
-    */
 
     // Deserialize index and check recall
     alg_hnsw = new hnswlib::HierarchicalNSW<float>(&space, hnsw_path);
