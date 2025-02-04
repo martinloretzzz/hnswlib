@@ -19,6 +19,9 @@
 #endif
 #endif
 #endif
+#if defined(__ARM_NEON)
+#define USE_NEON
+#endif
 #endif
 
 

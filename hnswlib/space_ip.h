@@ -31,9 +31,6 @@ static std::array<float, BatchSize> BatchedInnerProduct(const void *pVect1, void
         BatchUnroll<BatchSize>::add(batch_ptr, val1, i, res.data());
     }
 
-    for (unsigned b = 0; b < BatchSize; b++) {
-        res[b] = 1.0f - res[b];
-    }
     return res;
 }
 
@@ -216,6 +213,74 @@ static std::vector<float> BatchedInnerProductNoTemplate(size_t batch_size, const
     return result;
 }
 
+template <unsigned BatchSize>
+static std::array<float, BatchSize> BatchedInnerProductBatchN(const float* vec1, const float**batch, size_t dim)
+{
+    std::array<float, BatchSize> res{};
+    for (size_t i = 0; i < dim; i++) {
+        float val1 = vec1[i];
+        # pragma unroll
+        for (size_t b = 0; b < BatchSize; b++) {
+            res[b] += val1 * batch[b][i];
+        }
+    }
+    return res;
+}
+
+
+static std::vector<float> BatchedInnerProductTemplateN(size_t batch_size, const void *pVect1, void **pBatch, void *qty_ptr)
+{
+    size_t dim = *static_cast<size_t*>(qty_ptr);
+    const float** batch = ((const float**) pBatch);
+    const float* vec1 = static_cast<const float*>(pVect1);
+
+    std::vector<float> result;
+    result.reserve(batch_size);
+
+    size_t processed = 0;
+    while (processed < batch_size) {
+        switch (batch_size - processed) {
+            case 16 ... INT_MAX: {
+                auto batchResult = BatchedInnerProductBatchN<16>(vec1, batch + processed, dim);
+                result.insert(result.end(), batchResult.begin(), batchResult.end());
+                processed += 16;
+                break;
+            }
+            case 8 ... 15: {
+                auto batchResult = BatchedInnerProductBatchN<8>(vec1, batch + processed, dim);
+                result.insert(result.end(), batchResult.begin(), batchResult.end());
+                processed += 8;
+                break;
+            }
+            case 4 ... 7: {
+                auto batchResult = BatchedInnerProductBatchN<4>(vec1, batch + processed, dim);
+                result.insert(result.end(), batchResult.begin(), batchResult.end());
+                processed += 4;
+                break;
+            }
+            case 2 ... 3: {
+                auto batchResult = BatchedInnerProductBatchN<2>(vec1, batch + processed, dim);
+                result.insert(result.end(), batchResult.begin(), batchResult.end());
+                processed += 2;
+                break;
+            }
+            default: {
+                auto batchResult = BatchedInnerProductBatchN<1>(vec1, batch + processed, dim);
+                result.insert(result.end(), batchResult.begin(), batchResult.end());
+                processed += 1;
+                break;
+            }
+        }
+    }
+    
+    # pragma unroll 8
+    for (unsigned b = 0; b < batch_size; b++) {
+        result[b] = 1.0f - result[b];
+    }
+
+    return result;
+}
+
 #if defined(USE_SSE)
 
 static std::array<float, 4>
@@ -288,6 +353,188 @@ static std::vector<float> BatchedInnerProductSIMD(size_t batch_size, const void 
 
 #endif
 
+/*
+#ifdef USE_NEON
+
+static std::array<float, 1>
+BatchedInnerProductNEON1(const void *pVec0, void **pBatch, void *qty_ptr) {
+    float *pv0 = (float *) pVec0;
+
+    const float** batch = ((const float**)pBatch);
+    const float* pv1 = (const float*) batch[0];
+
+    size_t qty = *((size_t *) qty_ptr);
+    size_t qty4 = qty / 4;
+    const float *pEnd0 = pv0 + 4 * qty4;
+
+    float32x4_t s1 = vmovq_n_f32(0.0f);
+
+    for (; pv0 < pEnd0; pv0 += 4, pv1 += 4) {
+        float32x4_t v0 = vld1q_f32(pv0);
+        s1 = vfmaq_f32(s1, v0, vld1q_f32(pv1));
+    }
+
+    std::array<float, 1> res{};
+
+    res[0] = 1 - vaddvq_f32(s1);
+
+    return res;
+}
+
+
+static std::array<float, 2>
+BatchedInnerProductNEON2(const void *pVec0, void **pBatch, void *qty_ptr) {
+    float *pv0 = (float *) pVec0;
+
+    const float** batch = ((const float**)pBatch);
+    const float* pv1 = (const float*) batch[0];
+    const float* pv2 = (const float*) batch[1];
+
+    size_t qty = *((size_t *) qty_ptr);
+    size_t qty4 = qty / 4;
+    const float *pEnd0 = pv0 + 4 * qty4;
+
+    float32x4_t s1 = vmovq_n_f32(0.0f);
+    float32x4_t s2 = vmovq_n_f32(0.0f);
+
+    for (; pv0 < pEnd0; pv0 += 4, pv1 += 4, pv2 += 4) {
+        float32x4_t v0 = vld1q_f32(pv0);
+        s1 = vfmaq_f32(s1, v0, vld1q_f32(pv1));
+        s2 = vfmaq_f32(s2, v0, vld1q_f32(pv2));
+    }
+
+    std::array<float, 2> res{};
+
+    res[0] = 1 - vaddvq_f32(s1);
+    res[1] = 1 - vaddvq_f32(s2);
+
+    return res;
+}
+
+static std::array<float, 4>
+BatchedInnerProductNEON4(const void *pVec0, void **pBatch, void *qty_ptr) {
+    float *pv0 = (float *) pVec0;
+
+    const float** batch = ((const float**)pBatch);
+    const float* pv1 = (const float*) batch[0];
+    const float* pv2 = (const float*) batch[1];
+    const float* pv3 = (const float*) batch[2];
+    const float* pv4 = (const float*) batch[3];
+
+    size_t qty = *((size_t *) qty_ptr);
+    size_t qty4 = qty / 4;
+    const float *pEnd0 = pv0 + 4 * qty4;
+
+    float32x4_t s1 = vmovq_n_f32(0.0f);
+    float32x4_t s2 = vmovq_n_f32(0.0f);
+    float32x4_t s3 = vmovq_n_f32(0.0f);
+    float32x4_t s4 = vmovq_n_f32(0.0f);
+
+    for (; pv0 < pEnd0; pv0 += 4, pv1 += 4, pv2 += 4, pv3 += 4, pv4 += 4) {
+        float32x4_t v0 = vld1q_f32(pv0);
+        s1 = vfmaq_f32(s1, v0, vld1q_f32(pv1));
+        s2 = vfmaq_f32(s2, v0, vld1q_f32(pv2));
+        s3 = vfmaq_f32(s3, v0, vld1q_f32(pv3));
+        s4 = vfmaq_f32(s4, v0, vld1q_f32(pv4));
+    }
+
+    std::array<float, 4> res{};
+
+    res[0] = 1 - vaddvq_f32(s1);
+    res[1] = 1 - vaddvq_f32(s2);
+    res[2] = 1 - vaddvq_f32(s3);
+    res[3] = 1 - vaddvq_f32(s4);
+
+    return res;
+}
+
+static std::array<float, 8>
+BatchedInnerProductNEON8(const void *pVec0, void **pBatch, void *qty_ptr) {
+    float *pv0 = (float *) pVec0;
+
+    const float** batch = ((const float**)pBatch);
+    const float* pv1 = (const float*) batch[0];
+    const float* pv2 = (const float*) batch[1];
+    const float* pv3 = (const float*) batch[2];
+    const float* pv4 = (const float*) batch[3];
+    const float* pv5 = (const float*) batch[4];
+    const float* pv6 = (const float*) batch[5];
+    const float* pv7 = (const float*) batch[6];
+    const float* pv8 = (const float*) batch[7];
+
+    size_t qty = *((size_t *) qty_ptr);
+    size_t qty4 = qty / 4;
+    const float *pEnd0 = pv0 + 4 * qty4;
+
+    float32x4_t s1 = vmovq_n_f32(0.0f);
+    float32x4_t s2 = vmovq_n_f32(0.0f);
+    float32x4_t s3 = vmovq_n_f32(0.0f);
+    float32x4_t s4 = vmovq_n_f32(0.0f);
+    float32x4_t s5 = vmovq_n_f32(0.0f);
+    float32x4_t s6 = vmovq_n_f32(0.0f);
+    float32x4_t s7 = vmovq_n_f32(0.0f);
+    float32x4_t s8 = vmovq_n_f32(0.0f);
+
+    for (; pv0 < pEnd0; pv0 += 4, pv1 += 4, pv2 += 4, pv3 += 4, pv4 += 4, pv5 += 4, pv6 += 4, pv7 += 4, pv8 += 4) {
+        float32x4_t v0 = vld1q_f32(pv0);
+        s1 = vfmaq_f32(s1, v0, vld1q_f32(pv1));
+        s2 = vfmaq_f32(s2, v0, vld1q_f32(pv2));
+        s3 = vfmaq_f32(s3, v0, vld1q_f32(pv3));
+        s4 = vfmaq_f32(s4, v0, vld1q_f32(pv4));
+        s5 = vfmaq_f32(s5, v0, vld1q_f32(pv5));
+        s6 = vfmaq_f32(s6, v0, vld1q_f32(pv6));
+        s7 = vfmaq_f32(s7, v0, vld1q_f32(pv7));
+        s8 = vfmaq_f32(s8, v0, vld1q_f32(pv8));
+    }
+
+    std::array<float, 8> res{};
+
+    res[0] = 1 - vaddvq_f32(s1);
+    res[1] = 1 - vaddvq_f32(s2);
+    res[2] = 1 - vaddvq_f32(s3);
+    res[3] = 1 - vaddvq_f32(s4);
+    res[4] = 1 - vaddvq_f32(s5);
+    res[5] = 1 - vaddvq_f32(s6);
+    res[6] = 1 - vaddvq_f32(s7);
+    res[7] = 1 - vaddvq_f32(s8);
+
+    return res;
+}
+
+static std::vector<float> BatchedInnerProductNEON(size_t batch_size, const void *pVect1, void **pBatch, void *qty_ptr)
+{
+    const float** batch = ((const float**)pBatch);
+    std::vector<float> result;
+    result.reserve(batch_size);
+    
+    size_t processed = 0;
+    while (processed < batch_size) {
+        void **batch_ptr = (void**) (batch + processed);
+
+        if (batch_size - processed >= 8) {
+            auto batchResult = BatchedInnerProductNEON8(pVect1, batch_ptr, qty_ptr);
+            result.insert(result.end(), batchResult.begin(), batchResult.end());
+            processed += 8;
+        } else if (batch_size - processed >= 4) {
+            auto batchResult = BatchedInnerProductNEON4(pVect1, batch_ptr, qty_ptr);
+            result.insert(result.end(), batchResult.begin(), batchResult.end());
+            processed += 4;
+        } else if (batch_size - processed >= 2) {
+            auto batchResult = BatchedInnerProductNEON2(pVect1, batch_ptr, qty_ptr);
+            result.insert(result.end(), batchResult.begin(), batchResult.end());
+            processed += 2;
+        } else {
+            auto partial = BatchedInnerProductNEON1(pVect1, batch_ptr, qty_ptr);
+            result.insert(result.end(), partial.begin(), partial.end());
+            processed += 1;
+        }
+    }
+    
+    return result;
+}
+
+#endif
+
 
 #if defined(USE_AVX)
 
@@ -345,6 +592,7 @@ InnerProductDistanceSIMD4ExtAVX(const void *pVect1v, const void *pVect2v, const 
 }
 
 #endif
+*/
 
 #if defined(USE_SSE)
 
@@ -710,9 +958,16 @@ class InnerProductSpace : public SpaceInterface<float> {
     }
 
     BATCHEDDISTFUNC<float> get_dist_func_batched() {
-        BATCHEDDISTFUNC<float> distfunc = BatchedInnerProductNoTemplate;
+        BATCHEDDISTFUNC<float> distfunc = BatchedInnerProductForFixedSize;
 #if defined(USE_SSE)
         distfunc = BatchedInnerProductSIMD;
+#endif
+#ifdef USE_NEON
+        // Writing a custom NEON kernel doesn't make the code faster
+        // But the compiler doesn't use NEON for the BatchedInnerProductForFixedSize,
+        // s we have a simpler function
+        distfunc = BatchedInnerProductTemplateN;
+       // distfunc = BatchedInnerProductNEON;
 #endif
         return distfunc;
     }
