@@ -88,6 +88,7 @@ class MultiVectorInnerProductSpace : public BaseMultiVectorSpace<DOCIDTYPE> {
  public:
     MultiVectorInnerProductSpace(size_t dim) {
         fstdistfunc_ = InnerProductDistance;
+// /*
 #if defined(USE_AVX) || defined(USE_SSE) || defined(USE_AVX512)
     #if defined(USE_AVX512)
         if (AVX512Capable()) {
@@ -103,12 +104,12 @@ class MultiVectorInnerProductSpace : public BaseMultiVectorSpace<DOCIDTYPE> {
             InnerProductDistanceSIMD16Ext = InnerProductDistanceSIMD16ExtAVX;
         }
     #endif
-    #if defined(USE_AVX)
+    /*#if defined(USE_AVX)
         if (AVXCapable()) {
             InnerProductSIMD4Ext = InnerProductSIMD4ExtAVX;
             InnerProductDistanceSIMD4Ext = InnerProductDistanceSIMD4ExtAVX;
         }
-    #endif
+    #endif */
 
         if (dim % 16 == 0)
             fstdistfunc_ = InnerProductDistanceSIMD16Ext;
@@ -119,6 +120,7 @@ class MultiVectorInnerProductSpace : public BaseMultiVectorSpace<DOCIDTYPE> {
         else if (dim > 4)
             fstdistfunc_ = InnerProductDistanceSIMD4ExtResiduals;
 #endif
+// */
         vector_size_ = dim * sizeof(float);
         data_size_ = vector_size_ + sizeof(DOCIDTYPE);
     }

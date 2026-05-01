@@ -3,6 +3,7 @@
 #include <vector>
 #include <cstddef>
 #include <array>
+#include <climits>
 
 namespace hnswlib {
 
@@ -863,6 +864,7 @@ static std::vector<float> BatchedInnerProductForSizeSimple(size_t batch_size, co
 {
         size_t dim = *((size_t *) qty_ptr);
        auto fstdistfunc_ = InnerProductDistance;
+// /*
 #if defined(USE_AVX) || defined(USE_SSE) || defined(USE_AVX512)
     #if defined(USE_AVX512)
         if (AVX512Capable()) {
@@ -878,12 +880,12 @@ static std::vector<float> BatchedInnerProductForSizeSimple(size_t batch_size, co
             InnerProductDistanceSIMD16Ext = InnerProductDistanceSIMD16ExtAVX;
         }
     #endif
-    #if defined(USE_AVX)
+    /*#if defined(USE_AVX)
         if (AVXCapable()) {
             InnerProductSIMD4Ext = InnerProductSIMD4ExtAVX;
             InnerProductDistanceSIMD4Ext = InnerProductDistanceSIMD4ExtAVX;
         }
-    #endif
+    #endif */
 
         if (dim % 16 == 0)
             fstdistfunc_ = InnerProductDistanceSIMD16Ext;
@@ -894,6 +896,7 @@ static std::vector<float> BatchedInnerProductForSizeSimple(size_t batch_size, co
         else if (dim > 4)
             fstdistfunc_ = InnerProductDistanceSIMD4ExtResiduals;
 #endif
+// */
 
     std::vector<float> result;
     for (int i = 0; i<batch_size; ++i) {
@@ -929,12 +932,15 @@ class InnerProductSpace : public SpaceInterface<float> {
             InnerProductDistanceSIMD16Ext = InnerProductDistanceSIMD16ExtAVX;
         }
     #endif
+
+    /*
     #if defined(USE_AVX)
         if (AVXCapable()) {
             InnerProductSIMD4Ext = InnerProductSIMD4ExtAVX;
             InnerProductDistanceSIMD4Ext = InnerProductDistanceSIMD4ExtAVX;
         }
     #endif
+    */
 
         if (dim % 16 == 0)
             fstdistfunc_ = InnerProductDistanceSIMD16Ext;
