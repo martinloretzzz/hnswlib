@@ -1,4 +1,7 @@
 # Hnswlib - fast approximate nearest neighbor search
+
+## This fork is optimized for fast inner products on high dimensional data.
+
 Header-only C++ HNSW implementation with python bindings, insertions and updates.
 
 **NEWS:**

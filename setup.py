@@ -8,7 +8,7 @@ import setuptools
 from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
 
-__version__ = '0.8.1'
+__version__ = '0.11.0'
 
 
 include_dirs = [
@@ -129,9 +129,9 @@ class BuildExt(build_ext):
 
 
 setup(
-    name='hnswlib',
+    name='hnswlib-fast-ip',
     version=__version__,
-    description='hnswlib',
+    description='An optimized version of hnswlib for fast inner products on high dimensional data.',
     author='Yury Malkov and others',
     url='https://github.com/yurymalkov/hnsw',
     long_description="""hnsw""",
